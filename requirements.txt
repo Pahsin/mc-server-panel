@@ -1,0 +1,4 @@
+# 运行时依赖
+PySide6-Essentials>=6.5
+
+# 仅开发和打包需要（pip install -r requirements-dev.txt）
