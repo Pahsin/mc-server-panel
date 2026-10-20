@@ -1105,11 +1105,15 @@ class Panel(QMainWindow):
             return
         for i, w in enumerate(worlds):
             self.tbl_worlds.insertRow(i)
-            self.tbl_worlds.setItem(i, 0, QTableWidgetItem(
-                w["name"] + ("（当前）" if w["active"] else "")))
+            label = w["name"]
+            if w["active"]:
+                # 还没生成 = 建好档了但服务器还没启动过
+                label += "（当前·待生成）" if not w.get("generated", True) else "（当前）"
+            self.tbl_worlds.setItem(i, 0, QTableWidgetItem(label))
             self.tbl_worlds.setItem(i, 1, QTableWidgetItem(core.human_size(w["size"])))
             self.tbl_worlds.setItem(i, 2, QTableWidgetItem(
-                time.strftime("%Y-%m-%d %H:%M", time.localtime(w["mtime"]))))
+                time.strftime("%Y-%m-%d %H:%M", time.localtime(w["mtime"]))
+                if w.get("generated", True) else "尚未生成"))
             box = QWidget()
             h = QHBoxLayout(box)
             h.setContentsMargins(0, 2, 0, 2)

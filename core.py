@@ -779,23 +779,54 @@ def world_dir() -> Path:
 
 
 def list_worlds() -> list:
-    """服务端目录下所有含 level.dat 的文件夹，就是一个可切换的存档。"""
+    """
+    服务端目录下的存档 = 含 level.dat 的文件夹。
+    另外：当前 level-name 指向的目录可能还没生成（新建后未启动），也要列出来，
+    否则用户刚建的档在启动前看不到，像"没生效"。
+    """
     cur = current_world()
-    out = []
+    out, seen = [], set()
     for d in BASE.iterdir():
         try:
             if not d.is_dir() or d.name.startswith("."):
                 continue
-            if not (d / "level.dat").is_file():
-                continue
-            out.append({"name": d.name,
-                        "size": dir_size(d),
-                        "mtime": d.stat().st_mtime,
-                        "active": d.name == cur})
+            if (d / "level.dat").is_file():
+                out.append({"name": d.name, "size": dir_size(d),
+                            "mtime": d.stat().st_mtime,
+                            "active": d.name == cur, "generated": True})
+                seen.add(d.name)
         except OSError:
             continue
+    if cur not in seen and WORLD_RE.match(cur):
+        exists = (BASE / cur).is_dir()
+        out.append({"name": cur,
+                    "size": dir_size(BASE / cur) if exists else 0,
+                    "mtime": (BASE / cur).stat().st_mtime if exists else time.time(),
+                    "active": True, "generated": False})
     out.sort(key=lambda x: (not x["active"], -x["mtime"]))
     return out
+
+
+def switch_world(name: str, seed: str = "", level_type: str = ""):
+    """切换/新建存档：写 level-name（+ 种子/世界类型），并把目录先建出来。"""
+    name = (name or "").strip()
+    if not WORLD_RE.match(name):
+        return False, "存档名只能用字母、数字、下划线、空格、点、短横线（1-64 位）"
+    props = {"level-name": name,
+             "level-seed": (seed or "").strip(),     # 留空 = 随机，必须显式清掉旧值
+             "level-type": level_type or "minecraft:normal"}
+    write_props(props)
+
+    d = BASE / name
+    existed = (d / "level.dat").is_file()
+    if not d.exists():
+        try:
+            d.mkdir(parents=True)
+        except OSError as e:
+            return False, f"配置已写入，但创建目录失败：{e}"
+    if existed:
+        return True, f"已切换到已有存档「{name}」，重启服务器后就是它"
+    return True, f"已切到新存档「{name}」，下次启动会自动生成新世界"
 
 
 def delete_world(name: str):
@@ -823,21 +854,6 @@ def delete_world(name: str):
         return False, f"删除失败：{e}"
 
 
-def switch_world(name: str, seed: str = "", level_type: str = ""):
-    """切换/新建存档：本质是改 level-name（外加可选种子与世界类型），重启服务器后生效。"""
-    name = (name or "").strip()
-    if not WORLD_RE.match(name):
-        return False, "存档名只能用字母、数字、下划线、空格、点、短横线（1-64 位）"
-    props = {"level-name": name,
-             "level-seed": (seed or "").strip(),          # 留空 = 随机种子，必须显式清掉旧值
-             "level-type": level_type or "minecraft:normal"}
-    write_props(props)
-    if (BASE / name / "level.dat").is_file():
-        return True, f"已切换到已有存档「{name}」，启动服务器后就是它"
-    return True, f"已切到新存档「{name}」，启动后会自动生成新世界"
-
-
-# ---------------------------------------------------------------- 玩家 / 白名单 / 黑名单
 def get_players():
     wl = read_json(WHITELIST, [])
     ops = read_json(OPS, [])
