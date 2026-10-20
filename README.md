@@ -27,12 +27,14 @@
 | 一键指令 | 定位结构 / 给物品 / 给状态 / 清状态 / 杀实体 / 发消息，全部下拉选，底部实时显示生成的原版指令 |
 | 玩家 | 在线列表、踢人、设 OP；**白名单 ⇄ 黑名单一键切换**，离线账号 UUID 本地计算，封禁列表可视化增删 |
 | 服务器设置 | `server.properties` 常用项可视化编辑；JVM 内存 Xms/Xmx |
-| 存档备份 | 手动备份 + 定时自动备份；列表可删除 |
+| 存档管理 | 手动备份 + 定时自动备份；**多存档切换 / 新建**（改 `level-name`，支持种子与世界类型，重启生效） |
 | Mod 管理 | 勾选启停，关掉的移到 `mods-disabled`（不删除），可搜索 |
 
 ![运行中](docs/screenshot-running.png)
 
 ![玩家与进服限制](docs/screenshot-players.png)
+
+![存档管理](docs/screenshot-worlds.png)
 
 ![服务器设置](docs/screenshot-settings.png)
 
@@ -110,7 +112,7 @@ MCPanel-Setup.exe --silent --dir=D:\mcserver
 ├── app.py                 Qt 界面（窗口、页签、定时刷新）
 ├── quickcmd.py            一键指令面板（指令构造与校验）
 ├── forge_dialog.py        Forge 版本选择 / 下载 / 安装对话框
-├── core.py                后端核心（进程管理、日志解析、备份、配置、白名单/黑名单）
+├── core.py                后端核心（进程管理、日志解析、备份、配置、白名单/黑名单、存档切换）
 ├── setup.py               安装器
 ├── icongen.py             程序化生成图标（不依赖 Pillow）
 ├── build.bat              打包脚本

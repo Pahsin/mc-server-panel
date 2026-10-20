@@ -7,6 +7,7 @@ Minecraft 服务端控制台 —— Qt 桌面界面
 """
 import html
 import sys
+import time
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QSize
@@ -261,6 +262,7 @@ class Panel(QMainWindow):
         self.load_props()
         self.load_jvm()
         self.refresh_backups()
+        self.refresh_worlds()
         self.refresh_mods()
         self.refresh_forge_label()
 
@@ -289,7 +291,7 @@ class Panel(QMainWindow):
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
         items = [("服务器控制台", 0), ("玩家与白名单", 1), ("服务器设置", 2),
-                 ("存档备份", 3), ("Mod 管理", 4)]
+                 ("存档管理", 3), ("Mod 管理", 4)]
         for text, idx in items:
             b = QPushButton(text)
             b.setProperty("cls", "nav")
@@ -975,6 +977,51 @@ class Panel(QMainWindow):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(12)
 
+        # 切换 / 新建存档
+        fw, flw = card()
+        hw = QHBoxLayout()
+        tw = QLabel("当前存档")
+        tw.setObjectName("h3")
+        self.lbl_cur_world = QLabel("")
+        self.lbl_cur_world.setObjectName("muted")
+        hw.addWidget(tw)
+        hw.addWidget(self.lbl_cur_world)
+        hw.addStretch(1)
+        flw.addLayout(hw)
+
+        self.tbl_worlds = self._table(["存档", "大小", "修改时间", "操作"], last_width=120)
+        self.tbl_worlds.setMaximumHeight(150)
+        flw.addWidget(self.tbl_worlds)
+
+        rn = QHBoxLayout()
+        rn.setSpacing(8)
+        self.new_world = QLineEdit()
+        self.new_world.setPlaceholderText("新存档名，例如 world2 / 空岛生存")
+        self.new_world.returnPressed.connect(self.on_switch_world)
+        rn.addWidget(self.new_world, 1)
+        self.cb_wtype = QComboBox()
+        self.cb_wtype.addItem("默认地形", "")
+        self.cb_wtype.addItem("超平坦", "minecraft:flat")
+        self.cb_wtype.addItem("巨型生物群系", "minecraft:large_biomes")
+        self.cb_wtype.addItem("放大化", "minecraft:amplified")
+        self.cb_wtype.addItem("单一生物群系", "minecraft:single_biome_surface")
+        rn.addWidget(self.cb_wtype)
+        self.seed_edit = QLineEdit()
+        self.seed_edit.setPlaceholderText("种子（可留空）")
+        self.seed_edit.setMaximumWidth(140)
+        rn.addWidget(self.seed_edit)
+        b_new = QPushButton("新建/切换到此存档")
+        b_new.setProperty("cls", "primary")
+        b_new.clicked.connect(self.on_switch_world)
+        rn.addWidget(b_new)
+        flw.addLayout(rn)
+
+        tip = QLabel("切换存档 = 改 level-name，必须重启服务器才生效；新存档首次启动会自动生成世界。")
+        tip.setObjectName("muted")
+        tip.setWordWrap(True)
+        flw.addWidget(tip)
+        lay.addWidget(fw)
+
         f, fl = card()
         head = QHBoxLayout()
         t = QLabel("存档备份")
@@ -1039,6 +1086,52 @@ class Panel(QMainWindow):
         fl3.addWidget(self.tbl_bk, 1)
         lay.addWidget(f3, 1)
         return w
+
+    # ---- 存档切换
+    def refresh_worlds(self):
+        cur = core.current_world()
+        self.lbl_cur_world.setText(f"当前：{cur}")
+        worlds = core.list_worlds()
+        self.tbl_worlds.setRowCount(0)
+        if not worlds:
+            self.tbl_worlds.setRowCount(1)
+            it = QTableWidgetItem("没检测到存档（新存档启动后会自动出现）")
+            it.setForeground(Qt.GlobalColor.gray)
+            self.tbl_worlds.setItem(0, 0, it)
+            return
+        for i, w in enumerate(worlds):
+            self.tbl_worlds.insertRow(i)
+            self.tbl_worlds.setItem(i, 0, QTableWidgetItem(
+                w["name"] + ("（当前）" if w["active"] else "")))
+            self.tbl_worlds.setItem(i, 1, QTableWidgetItem(core.human_size(w["size"])))
+            self.tbl_worlds.setItem(i, 2, QTableWidgetItem(
+                time.strftime("%Y-%m-%d %H:%M", time.localtime(w["mtime"]))))
+            btn = QPushButton("切换" if not w["active"] else "已是当前")
+            btn.setProperty("cls", "ghost")
+            btn.setEnabled(not w["active"])
+            btn.clicked.connect(lambda _=False, n=w["name"]: self.on_switch_world(n))
+            self.tbl_worlds.setCellWidget(i, 3, btn)
+
+    def on_switch_world(self, name=None):
+        name = (name or self.new_world.text()).strip()
+        if not name:
+            QMessageBox.information(self, "切换存档", "先填一个存档名，或在上面的列表里点「切换」。")
+            return
+        if core.SRV.status()["running"]:
+            QMessageBox.warning(
+                self, "请先停止服务器",
+                "存档（level-name）只在服务器启动时读取，运行中改不会生效。\n\n"
+                "请先点顶部「停止」，再来切换。")
+            return
+        ok, msg = core.switch_world(name, self.seed_edit.text(), self.cb_wtype.currentData())
+        if not ok:
+            QMessageBox.warning(self, "无法切换", msg)
+            return
+        self.new_world.clear()
+        self.seed_edit.clear()
+        self.refresh_worlds()
+        self.load_props()
+        QMessageBox.information(self, "已切换", msg + "\n\n现在点「启动」就进入这个存档了。")
 
     def refresh_backups(self):
         data = core.BK.list()
@@ -1211,6 +1304,7 @@ class Panel(QMainWindow):
 
         if self.stack.currentIndex() == 3:
             self.refresh_backups()
+            self.refresh_worlds()
 
         if self._closing:
             if not running:
