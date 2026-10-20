@@ -773,6 +773,11 @@ def current_world() -> str:
     return read_props().get("level-name", "world")
 
 
+def world_dir() -> Path:
+    """当前生效的存档目录（跟着 level-name 走，不是写死的 world）。"""
+    return BASE / current_world()
+
+
 def list_worlds() -> list:
     """服务端目录下所有含 level.dat 的文件夹，就是一个可切换的存档。"""
     cur = current_world()
@@ -791,6 +796,31 @@ def list_worlds() -> list:
             continue
     out.sort(key=lambda x: (not x["active"], -x["mtime"]))
     return out
+
+
+def delete_world(name: str):
+    """
+    删除一个存档文件夹（不可撤销）。
+    三重保护：只能删"确认是存档"的目录、不能删当前正在用的、服务器运行中禁止删。
+    """
+    name = (name or "").strip()
+    if not WORLD_RE.match(name):
+        return False, "存档名不合法"
+    if SRV.status()["running"]:
+        return False, "服务器正在运行，请先停止再删除存档"
+    if name == current_world():
+        return False, f"「{name}」是当前正在使用的存档，先切换到别的存档再删"
+
+    d = (BASE / name).resolve()
+    if not str(d).startswith(str(BASE.resolve())) or d == BASE.resolve():
+        return False, "存档名不合法（只允许服务端目录内的子文件夹）"
+    if not d.is_dir() or not (d / "level.dat").is_file():
+        return False, f"没找到存档「{name}」（只认里面有 level.dat 的文件夹）"
+    try:
+        shutil.rmtree(d)
+        return True, f"已删除存档「{name}」。panel\\backups 里的备份 zip 不受影响。"
+    except Exception as e:
+        return False, f"删除失败：{e}"
 
 
 def switch_world(name: str, seed: str = "", level_type: str = ""):
@@ -1035,7 +1065,7 @@ def open_folder(target: str = "base"):
     """在资源管理器里打开指定目录。"""
     p = {
         "base": BASE, "backups": BACKUP_DIR, "mods": MODS_DIR,
-        "world": WORLD_DIR, "logs": BASE / "logs", "panel": PANEL_DIR,
+        "world": world_dir(), "logs": BASE / "logs", "panel": PANEL_DIR,
     }.get(target, BASE)
     try:
         if os.name == "nt":

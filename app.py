@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QLineEdit, QPlainTextEdit, QCheckBox, QComboBox,
     QSpinBox, QDoubleSpinBox, QTableWidget, QTableWidgetItem, QHeaderView,
     QStackedWidget, QListWidget, QListWidgetItem, QFrame, QProgressBar,
-    QMessageBox, QScrollArea, QSizePolicy, QAbstractItemView, QButtonGroup,
+    QMessageBox, QInputDialog, QScrollArea, QSizePolicy, QAbstractItemView, QButtonGroup,
 )
 
 import core
@@ -987,9 +987,13 @@ class Panel(QMainWindow):
         hw.addWidget(tw)
         hw.addWidget(self.lbl_cur_world)
         hw.addStretch(1)
+        b_openw = QPushButton("打开存档文件夹")
+        b_openw.setProperty("cls", "ghost")
+        b_openw.clicked.connect(lambda: core.open_folder("world"))
+        hw.addWidget(b_openw)
         flw.addLayout(hw)
 
-        self.tbl_worlds = self._table(["存档", "大小", "修改时间", "操作"], last_width=120)
+        self.tbl_worlds = self._table(["存档", "大小", "修改时间", "操作"], last_width=176)
         self.tbl_worlds.setMaximumHeight(150)
         flw.addWidget(self.tbl_worlds)
 
@@ -1106,11 +1110,52 @@ class Panel(QMainWindow):
             self.tbl_worlds.setItem(i, 1, QTableWidgetItem(core.human_size(w["size"])))
             self.tbl_worlds.setItem(i, 2, QTableWidgetItem(
                 time.strftime("%Y-%m-%d %H:%M", time.localtime(w["mtime"]))))
-            btn = QPushButton("切换" if not w["active"] else "已是当前")
-            btn.setProperty("cls", "ghost")
-            btn.setEnabled(not w["active"])
-            btn.clicked.connect(lambda _=False, n=w["name"]: self.on_switch_world(n))
-            self.tbl_worlds.setCellWidget(i, 3, btn)
+            box = QWidget()
+            h = QHBoxLayout(box)
+            h.setContentsMargins(0, 2, 0, 2)
+            h.setSpacing(6)
+            b_sw = QPushButton("切换" if not w["active"] else "当前")
+            b_sw.setProperty("cls", "ghost")
+            b_sw.setEnabled(not w["active"])
+            b_sw.setToolTip("切换到这个存档（需要重启服务器）")
+            b_sw.clicked.connect(lambda _=False, n=w["name"]: self.on_switch_world(n))
+            b_del = QPushButton("删除")
+            b_del.setProperty("cls", "ghost")
+            b_del.setToolTip("永久删除这个存档")
+            b_del.clicked.connect(lambda _=False, n=w["name"]: self.on_del_world(n))
+            h.addWidget(b_sw)
+            h.addWidget(b_del)
+            self.tbl_worlds.setCellWidget(i, 3, box)
+
+    def on_del_world(self, name):
+        worlds = {w["name"]: w for w in core.list_worlds()}
+        w = worlds.get(name)
+        size = core.human_size(w["size"]) if w else "未知大小"
+
+        r = QMessageBox.warning(
+            self, "删除存档",
+            f"即将永久删除这个存档：\n\n  {name}（{size}）\n\n"
+            "· 世界、建筑、箱子里的东西全部消失，且不可撤销\n"
+            "· 「存档管理」页已经做过的备份 zip 不受影响\n\n"
+            "确定要继续吗？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if r != QMessageBox.StandardButton.Yes:
+            return
+
+        typed, ok = QInputDialog.getText(
+            self, "最后一步确认",
+            f"请输入存档名「{name}」来确认删除：\n（名字必须对得上才会执行）")
+        if not ok or typed.strip() != name:
+            QMessageBox.information(self, "没有删除", "名字不一致，已取消。")
+            return
+
+        ok2, msg = core.delete_world(name)
+        if ok2:
+            self.refresh_worlds()
+            QMessageBox.information(self, "已删除", msg)
+        else:
+            QMessageBox.warning(self, "删不掉", msg)
 
     def on_switch_world(self, name=None):
         name = (name or self.new_world.text()).strip()
@@ -1282,7 +1327,7 @@ class Panel(QMainWindow):
         avg = st["uptime"]
         self.lbl_server.setText(f"已运行 {self._fmt(avg)}" if running else "服务器未运行")
         self.lbl_footer.setText(
-            f"服务端目录：{core.BASE}    |    存档 {core.human_size(core.dir_size(core.WORLD_DIR))}"
+            f"服务端目录：{core.BASE}    |    存档 {core.current_world()} {core.human_size(core.dir_size(core.world_dir()))}"
         )
         if st["last_error"] and st["state"] == "stopped":
             self.lbl_hint.setText("启动失败：" + st["last_error"][:80])
